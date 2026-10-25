@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>👁</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:system-ui,Tahoma,sans-serif;color:#fff;touch-action:none;-webkit-user-select:none;user-select:none}
+  body.nocam{background:linear-gradient(#6ec6ff 0%,#bfe9ff 55%,#7cb342 55%,#558b2f 100%)}
+  video,canvas{position:fixed;inset:0;width:100%;height:100%;object-fit:cover}
+  video{display:none}
+  canvas{touch-action:none}
+  #start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#101418;z-index:10;text-align:center;padding:24px}
+  button{font-family:inherit}
+  #go,#nocam,.bar button{border:0;border-radius:14px;padding:14px 22px;font-size:18px;font-weight:700}
+  #go{background:#3ddc84;color:#062}
+  #nocam{background:transparent;color:#9ab;border:1px solid #345;font-size:15px;font-weight:500;padding:10px 16px}
+  #msg{color:#ffb4a8;min-height:24px;line-height:1.8;font-size:15px;max-width:420px}
+  #diag{font-size:12px;opacity:.6;direction:ltr}
+  #start{background:radial-gradient(circle at 50% 35%,#1b1030 0%,#07050d 70%);overflow:hidden}
+  .eye{font-size:72px;filter:drop-shadow(0 0 18px #9b5cff);animation:pulse 3s ease-in-out infinite}
+  .title{margin:0;font-size:24px;line-height:1.9;font-weight:600;letter-spacing:.5px;color:#e6dcff;text-shadow:0 0 14px #7a3cff;animation:flick 5s infinite}
+  .fine{position:absolute;bottom:calc(14px + env(safe-area-inset-bottom));font-size:11px;opacity:.4;padding:0 24px}
+  #go{background:transparent;color:#d9c8ff;border:1px solid #7a3cff;box-shadow:0 0 18px #7a3cff66,inset 0 0 12px #7a3cff44;margin-top:8px}
+  @keyframes pulse{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.12);opacity:1}}
+  @keyframes flick{0%,92%,100%{opacity:1}94%{opacity:.4}96%{opacity:.9}98%{opacity:.5}}
+  .bar{position:fixed;bottom:0;left:0;right:0;display:none;flex-wrap:wrap;gap:8px;justify-content:center;padding:12px 12px calc(12px + env(safe-area-inset-bottom));z-index:5}
+  .bar button{padding:12px 16px;font-size:16px;background:rgba(0,0,0,.55);color:#fff;backdrop-filter:blur(6px)}
+  .bar button.on{background:#3ddc84;color:#062}
+  #toast{position:fixed;top:calc(48px + env(safe-area-inset-top));left:0;right:0;text-align:center;font-size:15px;opacity:0;transition:opacity .3s;z-index:6;pointer-events:none;text-shadow:0 1px 4px #000}
+  #hint{position:fixed;top:calc(12px + env(safe-area-inset-top));left:0;right:0;text-align:center;font-size:14px;display:none;z-index:5;text-shadow:0 1px 4px #000}
+  #roar{position:fixed;top:30%;left:0;right:0;text-align:center;font-size:56px;font-weight:900;opacity:0;transition:opacity .2s;z-index:5;text-shadow:0 2px 10px #000;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="start">
+  <div class="eye">👁</div>
+  <h2 class="title">برای دیدن حقایق دنیا<br>کلید دوربین رو باز کن</h2>
+  <button id="go">🗝 باز کردن کلید</button>
+  <button id="nocam">بدون دوربین (فقط تست)</button>
+  <div id="msg"></div>
+  <div id="diag"></div>
+  <div class="fine">تصویر دوربین فقط روی گوشی خودت نمایش داده می‌شه و جایی ذخیره نمی‌شه.</div>
+</div>
+
+<video id="cam" playsinline muted autoplay></video>
+<div id="hint">رو زمین بزن تا دایناسور بره اونجا</div>
+<div id="roar">ROOAAR!</div>
+<div id="toast"></div>
+<div class="bar" id="bar">
+  <button id="bRoar">🔊 غرش</button>
+  <button id="bBig">➕</button>
+  <button id="bSmall">➖</button>
+  <button id="bStop">⏹ بایست</button>
+  <button id="bGyro">🧭 ژیرو</button>
+  <button id="bSnap" hidden>📸 عکس</button>
+  <button id="bRec" hidden>⏺ ضبط</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const msg = $('msg'), diag = $('diag');
+if (!/debug/.test(location.search)) { $('nocam').style.display = 'none'; diag.style.display = 'none'; }
+document.title = '👁';
+const inApp = /Instagram|FBAN|FBAV|Telegram|Rubika|Line\/|Twitter|; wv\)|WebView/i.test(navigator.userAgent);
+
+// ---- تشخیص مشکل قبل از شروع ----
+(async () => {
+  let perm = '?';
+  try { perm = (await navigator.permissions.query({ name: 'camera' })).state; } catch (e) {}
+  diag.textContent = `secure:${window.isSecureContext ? 'yes' : 'NO'} | camera:${perm} | inApp:${inApp ? 'yes' : 'no'}`;
+  if (!window.isSecureContext) msg.textContent = 'آدرس سایت HTTPS نیست، دوربین باز نمی‌شه.';
+  else if (inApp) msg.textContent = 'این یه مرورگر داخل اپه. لینک رو تو Chrome یا Safari باز کن.';
+  else if (perm === 'denied') msg.textContent = blockedHelp();
+})();
+
+function blockedHelp() {
+  return 'دسترسی دوربین برای این سایت بلاک شده. تو کروم: آیکون کنار آدرس ← Permissions (یا Site settings) ← Camera ← Allow، بعد صفحه رو رفرش کن. اگه اونجا هم نبود: تنظیمات گوشی ← Apps ← Chrome ← Permissions ← Camera.';
+}
+
+async function openCam() {
+  const tries = [
+    { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+    { video: true, audio: false }
+  ];
+  let last;
+  for (const c of tries) {
+    try { return await navigator.mediaDevices.getUserMedia(c); }
+    catch (e) { last = e; if (e.name === 'NotAllowedError' || e.name === 'SecurityError') break; }
+  }
+  throw last;
+}
+
+// ---- ارتباط با ربات روی گوشی (فقط وقتی ربات روشنه و لینک کلید داره) ----
+const LOCAL = 'http://127.0.0.1:8765';
+const KEY = ((location.search + location.hash).match(/[?&#]k=([\w-]+)/) || [])[1] || '';
+function toast(t) {
+  const el = $('toast'); el.textContent = t; el.style.opacity = 1;
+  clearTimeout(toast.h); toast.h = setTimeout(() => el.style.opacity = 0, 2500);
+}
+async function helperAlive() {
+  if (!KEY) return false;
+  try {
+    const c = new AbortController(); setTimeout(() => c.abort(), 1500);
+    return (await fetch(LOCAL + '/ping', { signal: c.signal })).ok;
+  } catch (e) { return false; }
+}
+
+let stream = null;
+$('go').onclick = async () => {
+  msg.textContent = '';
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    msg.textContent = 'این مرورگر یا آدرس، دوربین رو پشتیبانی نمی‌کنه (باید HTTPS باشه).';
+    return;
+  }
+  try {
+    stream = await openCam();
+    const v = $('cam');
+    v.srcObject = stream;
+    v.style.display = 'block';
+    await v.play();
+    launch();
+  } catch (e) {
+    const n = e && e.name;
+    if (n === 'NotAllowedError') msg.textContent = blockedHelp();
+    else if (n === 'NotFoundError') msg.textContent = 'دوربینی پیدا نشد.';
+    else if (n === 'NotReadableError') msg.textContent = 'یه اپ دیگه داره از دوربین استفاده می‌کنه. اون رو ببند و دوباره امتحان کن.';
+    else if (n === 'SecurityError') msg.textContent = 'مرورگر به خاطر امنیت اجازه نداد (HTTPS یا iframe بدون allow="camera").';
+    else msg.textContent = 'دوربین باز نشد: ' + (n || '') + ' ' + (e && e.message || '');
+  }
+};
+$('nocam').onclick = () => { document.body.classList.add('nocam'); launch(); };
+addEventListener('pagehide', () => { if (stream) stream.getTracks().forEach(t => t.stop()); });
+
+function launch() {
+  $('start').style.display = 'none';
+  $('bar').style.display = 'flex';
+  $('hint').style.display = 'block';
+  setTimeout(() => $('hint').style.display = 'none', 5000);
+  init();
+}
+
+function init() {
+  const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setClearColor(0x000000, 0);
+  document.body.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100);
+  camera.position.set(0, 1.5, 3);
+  camera.lookAt(0, 0, -2);
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x556655, 1.0));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+  sun.position.set(2, 5, 3);
+  scene.add(sun);
+
+  // ---- دایناسور ----
+  const mat = c => new THREE.MeshLambertMaterial({ color: c });
+  const green = mat(0x4caf50), dark = mat(0x2e7d32), belly = mat(0xc5e1a5), white = mat(0xffffff), black = mat(0x111111);
+  const box = (w, h, d, m, x = 0, y = 0, z = 0) => {
+    const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    o.position.set(x, y, z);
+    return o;
+  };
+
+  const dino = new THREE.Group();
+  const rig = new THREE.Group();
+  dino.add(rig);
+
+  const body = box(0.7, 0.6, 1.2, green, 0, 0.95, 0);
+  body.add(box(0.5, 0.2, 1.0, belly, 0, -0.25, 0));
+  rig.add(body);
+
+  const neck = new THREE.Group();
+  neck.position.set(0, 1.1, 0.55);
+  neck.add(box(0.35, 0.7, 0.35, green, 0, 0.3, 0.1));
+  const head = new THREE.Group();
+  head.position.set(0, 0.7, 0.15);
+  head.add(box(0.5, 0.4, 0.7, green, 0, 0, 0.2));
+  head.add(box(0.42, 0.1, 0.5, belly, 0, -0.2, 0.25));
+  head.add(box(0.08, 0.1, 0.08, white, 0.2, 0.12, 0.3));
+  head.add(box(0.08, 0.1, 0.08, white, -0.2, 0.12, 0.3));
+  head.add(box(0.04, 0.05, 0.04, black, 0.22, 0.12, 0.34));
+  head.add(box(0.04, 0.05, 0.04, black, -0.22, 0.12, 0.34));
+  neck.add(head);
+  rig.add(neck);
+
+  const tail1 = new THREE.Group(); tail1.position.set(0, 1.0, -0.6);
+  tail1.add(box(0.45, 0.4, 0.6, green, 0, 0, -0.25));
+  const tail2 = new THREE.Group(); tail2.position.set(0, 0, -0.55);
+  tail2.add(box(0.3, 0.3, 0.6, dark, 0, 0, -0.25));
+  const tail3 = new THREE.Group(); tail3.position.set(0, 0, -0.55);
+  tail3.add(box(0.16, 0.18, 0.6, green, 0, 0, -0.25));
+  tail2.add(tail3); tail1.add(tail2); rig.add(tail1);
+
+  for (let i = 0; i < 4; i++) rig.add(box(0.08, 0.2 - i * 0.03, 0.15, dark, 0, 1.35, 0.4 - i * 0.3));
+
+  const legs = [];
+  [[-0.28, 0.4], [0.28, 0.4], [-0.28, -0.4], [0.28, -0.4]].forEach(([x, z]) => {
+    const leg = new THREE.Group();
+    leg.position.set(x, 0.7, z);
+    leg.add(box(0.22, 0.7, 0.25, dark, 0, -0.35, 0));
+    leg.add(box(0.26, 0.1, 0.4, black, 0, -0.68, 0.08));
+    rig.add(leg); legs.push(leg);
+  });
+
+  // سایه‌ی ساده زیر دایناسور
+  const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.9, 24).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25 }));
+  shadow.position.y = 0.01; shadow.scale.set(0.8, 1, 1.4);
+  dino.add(shadow);
+
+  dino.scale.setScalar(0.8);
+  dino.position.set(0, 0, -2.5);
+  scene.add(dino);
+
+  const mark = new THREE.Mesh(new THREE.RingGeometry(0.12, 0.18, 32).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 }));
+  mark.visible = false; scene.add(mark);
+
+  // ---- کنترل ----
+  const target = dino.position.clone();
+  const ray = new THREE.Raycaster();
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const hit = new THREE.Vector3();
+  let moving = false, roarT = 0, baseScale = 0.8;
+
+  renderer.domElement.addEventListener('pointerdown', e => {
+    const p = new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+    ray.setFromCamera(p, camera);
+    if (ray.ray.intersectPlane(plane, hit) && hit.distanceTo(camera.position) < 14) {
+      target.copy(hit); target.y = 0;
+      mark.position.set(target.x, 0.01, target.z); mark.visible = true;
+      moving = true;
+    }
+  });
+
+  const roar = () => {
+    roarT = 1.2;
+    $('roar').style.opacity = 1;
+    setTimeout(() => $('roar').style.opacity = 0, 900);
+    if (navigator.vibrate) navigator.vibrate(150);
+  };
+  $('bRoar').onclick = roar;
+  $('bBig').onclick = () => baseScale = Math.min(baseScale * 1.2, 3);
+  $('bSmall').onclick = () => baseScale = Math.max(baseScale / 1.2, 0.2);
+  $('bStop').onclick = () => { moving = false; mark.visible = false; };
+
+  // ---- ژیروسکوپ: با چرخوندن گوشی دایناسور سر جاش می‌مونه ----
+  let gyroOn = false, a0 = null, ori = null;
+  const Zax = new THREE.Vector3(0, 0, 1);
+  const qFix = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+  const qScr = new THREE.Quaternion(), eu = new THREE.Euler();
+  const rad = THREE.MathUtils.degToRad;
+  const onOri = e => {
+    if (e.alpha == null) return;
+    if (a0 === null) a0 = e.alpha;
+    ori = { a: e.alpha - a0, b: e.beta, g: e.gamma };
+  };
+  $('bGyro').onclick = async () => {
+    const btn = $('bGyro');
+    if (!gyroOn) {
+      if (typeof DeviceOrientationEvent === 'undefined') { btn.textContent = '🧭 پشتیبانی نمی‌شه'; return; }
+      if (DeviceOrientationEvent.requestPermission) {
+        try { if (await DeviceOrientationEvent.requestPermission() !== 'granted') return; } catch (e) { return; }
+      }
+      a0 = null; ori = null;
+      addEventListener('deviceorientation', onOri);
+      gyroOn = true; btn.classList.add('on');
+    } else {
+      removeEventListener('deviceorientation', onOri);
+      gyroOn = false; btn.classList.remove('on');
+      camera.lookAt(0, 0, -2);
+    }
+  };
+  function applyGyro() {
+    if (!gyroOn || !ori) return;
+    eu.set(rad(ori.b), rad(ori.a), -rad(ori.g), 'YXZ');
+    camera.quaternion.setFromEuler(eu).multiply(qFix);
+    const ang = (screen.orientation && screen.orientation.angle) || window.orientation || 0;
+    camera.quaternion.multiply(qScr.setFromAxisAngle(Zax, -rad(ang)));
+  }
+
+  // ---- عکس/ضبط -> مستقیم به تلگرام (روی گوشی ذخیره نمی‌شه) ----
+  let afterRender = null;
+  (async () => {
+    if (!stream || !(await helperAlive())) return;
+    const vid = $('cam'), comp = document.createElement('canvas'), cx = comp.getContext('2d');
+    let wantSnap = false, rec = null, chunks = [], recTimer = null, t0 = 0, lastDraw = 0;
+
+    const draw = () => {
+      const cw = renderer.domElement.width, ch = renderer.domElement.height;
+      if (comp.width !== cw) comp.width = cw;
+      if (comp.height !== ch) comp.height = ch;
+      const vw = vid.videoWidth, vh = vid.videoHeight;
+      if (vw) {
+        const k = Math.max(cw / vw, ch / vh);
+        cx.drawImage(vid, (cw - vw * k) / 2, (ch - vh * k) / 2, vw * k, vh * k);
+      }
+      cx.drawImage(renderer.domElement, 0, 0, cw, ch);
+    };
+
+    afterRender = () => {
+      if (!wantSnap && !rec) return;
+      const now = performance.now();
+      if (!wantSnap && now - lastDraw < 30) return;
+      lastDraw = now;
+      draw();
+      if (wantSnap) { wantSnap = false; comp.toBlob(b => send(b, 'photo', 'jpg'), 'image/jpeg', 0.9); }
+    };
+
+    async function send(blob, kind, ext) {
+      toast('⏳ در حال ارسال...');
+      try {
+        const r = await fetch(`${LOCAL}/upload?kind=${kind}&ext=${ext}`, {
+          method: 'POST', headers: { 'X-Key': KEY, 'Content-Type': 'application/octet-stream' }, body: blob
+        });
+        toast(r.ok ? '✅ تو تلگرام فرستاده شد' : '❌ ارسال نشد (' + r.status + ')');
+      } catch (e) { toast('❌ ربات در دسترس نیست'); }
+    }
+
+    const pickMime = () => ['video/mp4;codecs=avc1.42E01E', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm']
+      .find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m));
+
+    $('bSnap').onclick = () => { wantSnap = true; };
+    $('bRec').onclick = () => {
+      const btn = $('bRec');
+      if (rec) { rec.stop(); return; }
+      const mime = pickMime();
+      if (!mime) { toast('ضبط تو این مرورگر پشتیبانی نمی‌شه'); return; }
+      const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+      chunks = []; draw();
+      rec = new MediaRecorder(comp.captureStream(30), { mimeType: mime, videoBitsPerSecond: 2500000 });
+      rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      rec.onstop = () => {
+        clearInterval(recTimer);
+        btn.textContent = '⏺ ضبط'; btn.classList.remove('on');
+        const blob = new Blob(chunks, { type: mime }); rec = null; chunks = [];
+        send(blob, 'video', ext);
+      };
+      rec.start(1000);
+      t0 = Date.now(); btn.classList.add('on');
+      recTimer = setInterval(() => {
+        const sec = Math.floor((Date.now() - t0) / 1000);
+        btn.textContent = '⏹ ' + sec + 's';
+        if (sec >= 60 && rec) rec.stop();
+      }, 500);
+    };
+    $('bSnap').hidden = false; $('bRec').hidden = false;
+  })();
+
+  addEventListener('resize', () => {
+    renderer.setSize(innerWidth, innerHeight);
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+  });
+
+  // ---- حلقه‌ی انیمیشن ----
+  const clock = new THREE.Clock();
+  let walkPhase = 0;
+  function loop() {
+    requestAnimationFrame(loop);
+    const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
+    applyGyro();
+
+    dino.scale.setScalar(dino.scale.x + (baseScale - dino.scale.x) * 0.1);
+
+    if (moving) {
+      const dx = target.x - dino.position.x, dz = target.z - dino.position.z;
+      if (Math.hypot(dx, dz) < 0.1) { moving = false; mark.visible = false; }
+      else {
+        let diff = Math.atan2(dx, dz) - dino.rotation.y;
+        diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+        dino.rotation.y += diff * Math.min(1, dt * 6);
+        const sp = 1.1 * dino.scale.x / 0.8;
+        dino.position.x += Math.sin(dino.rotation.y) * sp * dt;
+        dino.position.z += Math.cos(dino.rotation.y) * sp * dt;
+        walkPhase += dt * 7;
+      }
+    }
+
+    const sw = moving ? 0.6 : 0, s = Math.sin(walkPhase) * sw;
+    legs[0].rotation.x = s; legs[3].rotation.x = s;
+    legs[1].rotation.x = -s; legs[2].rotation.x = -s;
+    if (!moving) legs.forEach(l => l.rotation.x *= 0.8);
+
+    rig.position.y = moving ? Math.abs(Math.sin(walkPhase)) * 0.05 : Math.sin(t * 2) * 0.01;
+    const wag = Math.sin(moving ? walkPhase * 0.5 : t * 1.5);
+    tail1.rotation.y = wag * 0.25; tail2.rotation.y = wag * 0.3; tail3.rotation.y = wag * 0.35;
+
+    if (roarT > 0) {
+      roarT -= dt;
+      const k = Math.sin(Math.min(1, (1.2 - roarT) / 0.3) * Math.PI / 2);
+      head.rotation.x = -0.7 * k + Math.sin(t * 40) * 0.05;
+      neck.rotation.x = -0.2 * k;
+    } else {
+      head.rotation.x += (Math.sin(t * 1.2) * 0.05 - head.rotation.x) * 0.1;
+      neck.rotation.x += (0 - neck.rotation.x) * 0.1;
+    }
+    renderer.render(scene, camera);
+    if (afterRender) afterRender();
+  }
+  loop();
+}
+</script>
+</body>
+</html>
